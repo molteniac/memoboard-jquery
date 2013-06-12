@@ -1,0 +1,543 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
+<head>
+<title>ところ構わずメモ</title>
+<meta http-equiv='Content-Type' content='text/html; charset=UTF-8' />
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js"></script>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.6/jquery-ui.min.js"></script>
+
+<link rel="stylesheet" type="text/css" href="css/default.css" />
+<link rel="stylesheet" type="text/css" href="css/jquery.tooltip.css" />
+<link rel="stylesheet" type="text/css" href="./css/style.css" />
+
+<style type="text/css">
+	<!-- なんちゃつてスタイル -->
+	#draggable { width:200px; height: 20px; padding: 0.5em; }
+	#todoList { width:600px; border:1px solid gray; }
+	#doingList { width:600px; border:1px solid gray; }
+	#doneList { width:600px; border:1px solid gray;  }
+	#todoList .task {
+		list-style:none; cursor: default;
+		border:1px solid #c0c0c0; margin:3px; padding:0px;
+		background:#ffdcdc;
+	}
+	#doingList .task {
+		list-style:none; cursor: default;
+		border:1px solid #c0c0c0; margin:3px; padding:0px;
+		background:#dcffdc;
+	}
+	#doneList .task {
+		list-style:none; cursor: default;
+		border:1px solid #c0c0c0; margin:3px; padding:0px;
+		background:#b0c4de;
+	}
+	.placeholder { border:1px dotted blue; background-color: #fffacd; height: 20px; }
+	.text-editing {
+	  z-index: 99;
+	  position: absolute;
+	  font-size: 16px;
+	  width: 590px;
+	}
+	li.task:hover {
+		opacity: 0.7;
+		color: #ff0000;
+	}
+	.title {
+		list-style:none; cursor: default;
+		/**
+		background:#b0c4de;
+		**/
+		border:0px solid #c0c0c0;
+		margin: 0px;
+		padding: 2px 2px 2px 5px;
+	}
+	.detail {
+		list-style:none; cursor: default;
+		border:0px solid #c0c0c0;
+		margin: 0px;
+		padding: 3px 2px 5px 10px;
+		background-color: #ffffff;
+	}
+	.hide {
+		display: none;
+	}
+	span.editable {
+		text-decoration: underline;
+	}
+	div.editable {
+		color: #0000ff;
+	}
+
+   	body { font-size: 62.5%; }
+   	label, input { display:block; }
+   	input.text { margin-bottom:12px; width:95%; padding: .4em; }
+   	fieldset { padding:0; border:0; margin-top:25px; }
+   	h1 { font-size: 1.2em; margin: .6em 0; }
+   	div#users-contain { width: 350px; margin: 20px 0; }
+   	div#users-contain table { margin: 1em 0; border-collapse: collapse; width: 100%; }
+   	div#users-contain table td, div#users-contain table th { border: 1px solid #eee; padding: .6em 10px; text-align: left; }
+   	.ui-dialog .ui-state-error { padding: .3em; }
+   	.validateTips { border: 1px solid transparent; padding: 0.3em; }
+
+</style>
+
+<script type="text/javascript">
+//<![CDATA[
+
+	// ---------------------- initialize ----------------------
+	/*
+	 *
+	 * オプションの定義
+	 *
+	 */
+	// for droppable
+	var optDrop = {
+		accept: '.task'
+	}
+	
+	// for sortable 
+	var optSort = {
+		placeholder: "placeholder",
+		connectWith: ".listArea"
+	}
+
+	// ---------------------- ready ----------------------
+	$(function() {
+
+		// キャッシュの廃棄
+		$.ajaxSetup({ cache: false });
+
+		// データの読み出し
+		initList();
+
+		// 状態オブジェクト
+		var state = null;
+		var editing = null;
+		var org_text = null;
+
+		// ---------- イベントハンドラ ----------------
+		$(".listArea").droppable(optDrop).sortable(optSort).disableSelection();
+
+		// イベント処理を状態オブジェクトに委譲
+		$(".task").live('mousedown', function(event) {
+			state.onMouseDown(event);
+		});
+		$(".task").live('dblclick', function(event) {
+			state.onDblClick(event);
+		});
+		$(".text-editing").live('keydown', function(event) {
+			state.onKeyDown(event);
+		});
+		$(".editable").live('dblclick', function(event) {
+			state.onDblClick(event);
+		});
+
+		// どこかクリックしたら通常状態へ戻る
+		$("#application").mousedown(function(editing){
+			state.onMouseDown(editing);
+		});
+		$(".listArea").mousemove(function(event) { 
+			state.onMouseMove(event);
+		});
+		$(".listArea").mouseup(function(event) {
+			state.onMouseUp(event);
+		});
+
+		// タスクを登録する
+		$("#registerTask").submit(function(){
+			var title =  $("#title").val();
+			var detail = $("#detail").val();
+
+			if (title == '' || detail == '') {
+				alert("値を入力してください。");
+				return false;
+			} else {
+				var taskData = {
+					"title": title,
+					"detail": detail
+				};
+				registerTask(taskData);
+				$("#title").val("");
+				$("#detail").val("");
+			}
+			$("#title").select();
+			return false;
+		});
+
+		// AbstractStateクラスの定義
+		var AbstractState = function() {};
+		AbstractState.prototype = {
+			initialize: function() {},
+			onMouseDown: function(event) {},
+			onMouseMove: function(event) {}, 
+			onMouseUp: function(event) {}, 
+			onDblClick: function(event) {}, 
+			onKeyDown: function(event) {}, 
+			toString: function() {
+				return "AbstractState";
+			}
+		};
+
+		// Normalクラスの定義
+		var NormalState = function() {
+			editing = null; // 選択解除
+		};
+		$.extend(NormalState.prototype, AbstractState.prototype, {
+
+			// 移動中状態に遷移
+			onMouseDown: function(event) {
+				var target = event.target;
+				transitState(new DragMovingState(target));
+			},
+			// 詳細表示するか編集するかを判定
+			onDblClick: function(event) {
+				var target = event.target;
+
+				// 詳細をトグル
+				if ($(target).hasClass("title")) {
+					toggleAccordion(target);
+
+				// 編集中状態に遷移
+				} else if ($(target).hasClass("editable")) {
+					transitState(new TextEditingState(target));
+				}
+			},
+			// for debug
+			toString: function() {
+				return "NormalState";
+			}
+		});
+
+		// DragMovingStateの定義
+		var DragMovingState = function(target) {
+		};
+		$.extend(DragMovingState.prototype, AbstractState.prototype, {
+
+			// 通常状態に戻る
+			onMouseUp: function(event) {
+				var target = event.target;
+				transitState(new NormalState());
+			},
+			toString: function() {
+				return "DragMovingState";
+			}
+		});
+
+		// TextEditingStateの定義
+	 	var TextEditingState = function(target) {
+
+			editing = target;
+			var pos = $(editing).position();
+			var leftPos = pos.left;
+			var topPos = pos.top;
+
+			var textfield;
+			if ($(target).parent().hasClass("title")) {
+				textfield = '<input type="text" class="text-editing">';
+				leftPos = pos.left - 5;
+				topPos = pos.top - 2;
+			} else if ($(target).hasClass("detail")) {
+				textfield = '<textarea class="text-editing">';
+				leftPos = pos.left - 1;
+				topPos = pos.top + 1;
+			}
+
+			// テキストフィールドを作成して表示
+			this.input =
+				$(textfield)
+				.css({left: leftPos, top: topPos})
+				.val($(editing).text())
+				.appendTo("body")
+				.focus();
+
+			// 元の値を退避
+			org_text = $(editing).text();
+
+			// 選択された項目の内容を消す
+			$(editing).html("&nbsp;");
+		};
+		$.extend(TextEditingState.prototype, AbstractState.prototype, {
+
+			// テキスト編集を中止
+			onMouseDown: function(event) {
+				undoText(this);
+			},
+			// 入力を判定
+			onKeyDown: function(event) {
+
+				// ENTER キー押下
+				if (event.which == 13) {
+
+					// 選択された項目の内容を更新
+					$(editing).text(this.input.val());
+
+					// 書き込み処理
+					modifyTaskData(editing);
+
+					// テキストフィールドを除去
+					this.input.remove();
+
+					// 通常状態に遷移
+					transitState(new NormalState());
+					org_text = null;
+
+				// ESCキー押下
+				} else if (event.which == 27) {
+					undoText(this);
+				}
+			},
+			toString: function() {
+				return "TextEditingState";
+			}
+		});
+
+		// 初期状態はNormalStateから開始
+		transitState(new NormalState());
+
+		// タスク編集関数
+		// TODO resp.result が FALSE だったときの処理
+		function modifyTaskData(target) {
+
+			var title;
+			var detail;
+			var state;
+			var tgtList;
+
+			// 対象のタスクIDを取得する
+			var uid;
+    		if ($(target).hasClass("detail")) {
+				uid = $(target).parent().attr("id");
+				title = $(target).prev().text();
+				detail = $(target).text();
+				tgtList = $(target).parent().parent().attr("id");
+			} else {
+				uid = $(target).parent().parent().attr("id");
+				title = $(target).text();
+				detail = $(target).parent().next().text();
+				tgtList = $(target).parent().parent().parent().attr("id");
+			}
+
+			console.log("detail" + detail);
+			console.log("title" + title);
+			console.log("uid" + uid);
+			console.log("tgtList" + tgtList);
+
+			if (tgtList == 'todoList') {
+				state = 0;
+			} else if (tgtList == 'doingList') {
+				state = 1;
+			} else if (tgtList == 'doneList') {
+				state = 2;
+			} else {
+				alert("mod ERROR!");
+				return false;
+			}
+
+			// ユニークIDとバージョン番号を切り出す
+			var uArray = uid.split(":");
+			var uniqueID = uArray[0];
+			var versionNo = uArray[1];
+
+			// オブジェクトにする
+			var taskData = {
+				"uniqueID": uniqueID,
+				"title": title,
+				"detail": detail,
+				"state": state,
+				"versionNo": versionNo
+			};
+
+			// 編集処理
+			$.ajax({
+				url: "http://localhost/memomo/libs/ModifyData.php",
+				data: {
+					"taskData": taskData
+				},
+				dataType: "jsonp",
+				type: "POST",
+
+				// タスク一覧をロードしなおす
+				success: function (resp, stat, xhr) {
+					// for debug
+    				console.log("mod success");
+    				console.log(resp.result);
+
+					if (!result.result) {
+						console.log("mod result: false");
+
+					} else {
+						console.log("mod result: true");
+
+						getTaskList(resp);
+
+					}
+				}
+			});
+		}
+
+		// タスク登録関数
+		// TODO resp.result が FALSE だったときの処理
+		function registerTask(taskData) {
+
+			// TODO いずれプロジェクト対応する (ファイル名_プロジェクトID.txt)
+			var projectNo = 0;
+
+			$.ajax({
+				url: "http://localhost/memomo/libs/WriteData.php",
+				data: {
+					"taskData": taskData
+				},
+				dataType: "jsonp",
+				type: "POST",
+
+				success: function (resp, stat, xhr) {
+					var targetList = "#todoList";
+					$(targetList).empty();
+
+					$.each(resp.todo, function(i, item){
+						var uniqueID = item.uniqueID;
+						var title = item.title;
+						var detail = item.detail;
+						var state = item.state;
+						var versionNo = item.versionNo;
+
+						$("<li/>")
+							.attr("id", uniqueID + ":" + versionNo)
+							.addClass("task")
+							.append($("<div/>")
+								.addClass("title")
+								.append($("<span/>")
+									.append(title)
+									)
+								)
+							.append($("<div/>")
+								.addClass("editable detail hide")
+								.append(detail)
+								)
+							.appendTo(targetList);
+					});
+				}
+			});
+		}
+
+		// アコーディオン関数 (開いたら編集できるようになる)
+		function toggleAccordion(tgl) {
+			var target = $(tgl);
+    		target.next().toggleClass('hide');
+   			$(target).find('span').toggleClass("editable");
+		}
+
+		// 状態遷移をセット
+		function transitState(newState) {
+			// for debug
+			$("#debug").append(state + ' ⇒ ' + newState + '<br/>');
+
+			state = newState;
+		}
+
+		// テキスト編集を中止
+		function undoText(targetState) {
+			$(editing).text(org_text);
+			targetState.input.remove();
+			transitState(new NormalState());
+			org_text = null;
+		}
+
+		// JSONP でデータを読み出す
+		function initList() {
+
+			var projectNo = 0;
+
+			// いまのところ認証なし
+			// 失敗しても error のイベントが呼ばれない件は保留
+			$.ajax({
+				url: "http://localhost/memomo/libs/ReadData.php",
+				dataType: "jsonp",
+				type: "POST",
+
+				// データ取得に成功した場合
+				success: function (resp, stat, xhr) {
+					getTaskList(resp);
+				}
+			});
+		}
+
+		function getTaskList(resp) {
+			$("#todoList").empty();
+			$("#doingList").empty();
+			$("#doneList").empty();
+			
+			$.each(resp.todo, function(i, item){
+				var uniqueID = item.uniqueID;
+				var title = item.title;
+				var detail = item.detail;
+				var state = item.state;
+				var versionNo = item.versionNo;
+			
+				var targetList;
+				if (state == 0) {
+					targetList = "#todoList";
+				} else if (state == 1) {
+					targetList = "#doingList";
+				} else if (state == 2) {
+					targetList = "#doneList";
+				} else {
+					alert("ERROR!!");
+					return false;
+				}
+			
+				$("<li/>")
+					.attr("id", uniqueID + ":" + versionNo)
+					.addClass("task")
+					.append($("<div/>")
+						.addClass("title")
+						.append($("<span/>")
+							.append(title)
+							)
+						)
+					.append($("<div/>")
+						.addClass("editable detail hide")
+						.append(detail)
+						)
+					.appendTo(targetList);
+			});
+		}
+
+	});
+
+
+//]]>
+</script>
+
+</head>
+<body>
+
+<div id="application">
+
+<div id="formArea">
+	<form id="registerTask">
+		<input type="text" id="title" name="title" size="60" ><br>
+		<textarea name="detail" cols="50" rows="3" id="detail"></textarea>
+		<input type="submit" value="タスクる？">
+	</form>
+</div>
+<p></p>
+
+<div id="listHead">Todo</div>
+<ul id="todoList" class="listArea"></ul>
+<p></p>
+<div id="listHead">Doing</div>
+<ul id="doingList" class="listArea"></ul>
+<p></p>
+<div id="listHead">Done</div>
+<ul id="doneList" class="listArea"></ul>
+<p></p>
+
+Debug : <div id="debug"></div>
+
+</div>
+
+</body>
+</html>

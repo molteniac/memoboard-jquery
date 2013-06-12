@@ -1,0 +1,53 @@
+body {
+	margin: 0;
+	padding: 10px 45px;
+}
+
+div#filer {
+	position: relative;
+	margin: 10px;
+	width: 410px;
+}
+
+ul.directory {
+	list-style: none;
+	width: 70px;
+	height: 300px;
+	margin: 0 0 10px 0;
+	padding: 40px 65px 10px;
+	background: #fffda6 url(images/img_folder.png) no-repeat 0 0;
+}
+
+ul#directory2 {
+	position: absolute;
+	right: 0;
+	top: 0;
+}
+
+ul.ui-droppable-hover {
+	background: #d6f270 url(images/img_folder.png) no-repeat -300px 0;
+}
+
+li.file {
+	z-index: 1;
+	width: 70px;
+	height: 40px;
+	margin: 0 0 10px 0;
+	background: transparent url(images/img_file.png) no-repeat 0 0;
+	text-align: center;
+	line-height: 45px;
+	color: #333;
+	font-size: 12px;
+	top: 0px;
+	left: 0px;
+}
+
+li.ui-selecting {
+	background-position: 0 -100px;
+	color: #999;
+}
+
+li.ui-selected {
+	background-position: 0 -200px;
+	color: #090;
+}
